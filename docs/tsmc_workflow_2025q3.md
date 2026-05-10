@@ -1,169 +1,167 @@
 # 台積電（TSMC）完整投研流程操作指南
 
-**適用框架**：制度化投研框架 v1.0  
-**標的**：台積電 TSM  
-**期間**：2025Q3  
-**環境**：VS Code + Claude Code + macOS Terminal
+**標的**：台積電 TSM｜**期間**：2025Q3  
+**環境**：VS Code + Claude Code Terminal（macOS）  
+**最後更新**：2026-05-10
 
 ---
 
-## 前置確認
+## 一、一鍵執行
 
-| 項目 | 路徑 | 應有內容 |
-|------|------|---------|
-| 公司設定 | `config/companies/TSM.yaml` | ticker、financial_weights |
-| Backtesting 資料 | `output/backtesting/tsmc_5y_impact_contributions.csv` | period, ticker, revenue_qoq, gross_margin_delta |
-| WordPress 密碼 | macOS Keychain | `wp-app-password`（帳號 ClaudeCode） |
-| GitHub remote | `git remote -v` | origin → williamhsueh2010-sys/investment-research-ops |
-
----
-
-## 一鍵執行（標準流程）
-
-在 VS Code Terminal 執行：
+在 VS Code 的 Terminal 輸入：
 
 ```bash
 python3 scripts/run_all.py
 ```
 
-流程依序為：
-
-```
-Step 1  Backtesting   →  output/backtesting/tsm_5y_impact_contributions.csv
-Step 2  Report        →  output/markdown_report/TSM_2025Q3_investment_report.md
-Step 3  WordPress     →  https://iro.langstalk.pro（REST API 發文）
-Step 4  Hugo build    →  hugo-investment-reports/public/
-Step 5  Git publish   →  github.com/williamhsueh2010-sys/investment-research-ops
-```
+> 注意：這台機器的 `python` 指向舊版，請務必用 `python3`。
 
 ---
 
-## 分步驟說明
+## 二、流程與確認清單
 
-### Step 1｜Backtesting — 從 Yahoo Finance 抓取季度財務資料
+### Step 1｜Backtesting — 抓取財務資料
 
-```bash
-python3 scripts/run_backtesting.py
-```
+**執行位置**：Terminal（自動由 run_all.py 呼叫）
 
-**腳本做什麼**：
-- 讀取 `config/companies/*.yaml` 取得 ticker 清單
-- 用 `yfinance` 抓取近 4 季的 `quarterly_income_stmt`
-- 計算 `revenue_qoq`（營收季增率）與 `gross_margin_delta`（毛利率季變化）
-- 輸出到 `output/backtesting/tsm_5y_impact_contributions.csv`
-
-**確認結果**：
+**確認方式**：
 ```bash
 cat output/backtesting/tsm_5y_impact_contributions.csv
 ```
-應看到含 `period, ticker, revenue_qoq, gross_margin_delta` 的多筆資料。
+應看到含 `period, ticker, revenue_qoq, gross_margin_delta` 的多季資料：
+```
+period,ticker,revenue_qoq,gross_margin_delta
+2025Q1,TSM,-0.033631,-0.002087
+2025Q2,TSM,0.112646,-0.001718
+2025Q3,TSM,0.060106,0.008358
+2025Q4,TSM,0.056744,0.028724
+```
 
 ---
 
 ### Step 2｜Report — 產生 Markdown 投研報告
 
-```bash
-python3 scripts/generate_investment_report.py
+**執行位置**：Terminal（自動由 run_all.py 呼叫）
+
+**確認方式**：在 VS Code Explorer 展開 `output/markdown_report/`，確認以下檔案存在：
+
+```
+output/markdown_report/
+├── TSM_2025Q1_investment_report.md
+├── TSM_2025Q2_investment_report.md
+├── TSM_2025Q3_investment_report.md   ← 主要確認這份
+└── TSM_2025Q4_investment_report.md
 ```
 
-**腳本做什麼**：
-- 讀取 `config/companies/TSM.yaml` 的 `financial_weights`
-- 掃描 `output/backtesting/*.csv`，篩選 ticker = TSM 的資料列
-- 計算每個指標的貢獻分數，判斷訊號方向（偏多 ▲ / 偏空 ▼ / 中性 —）
-- 每一季各產一份 MD：`output/markdown_report/TSM_{PERIOD}_investment_report.md`
+點開 `TSM_2025Q3_investment_report.md`，應看到：
 
-**確認結果**：
-在 VS Code 的 Explorer 確認 `output/markdown_report/` 下有：
+```markdown
+# TSM 2025Q3 投資研究報告
+
+## 綜合評分
+| 項目 | 數值 |
+| 綜合評分 | +0.xxxx |
+| 整體訊號 | 偏多 ▲ |
+
+## 指標貢獻明細
+| 指標 | 數值 | 權重 | 貢獻分數 | 訊號方向 |
+| revenue_qoq | ... | 3.0 | ... | 偏多 ▲ |
+| gross_margin_delta | ... | 5.0 | ... | 偏多 ▲ |
 ```
-TSM_2025Q3_investment_report.md
-```
-點開，應看到「綜合評分」表格與「指標貢獻明細」表格。
 
 ---
 
-### Step 3｜WordPress — 發佈到 WordPress
+### Step 3｜WordPress — 發佈文章
 
+**執行位置**：Terminal（自動由 run_all.py 呼叫）
+
+**Terminal 應顯示**：
+```
+Published: 'TSM 投研報告' -> ID: xx
+```
+
+**確認方式**：開啟瀏覽器前往：
+```
+https://iro.langstalk.pro
+```
+確認最新文章已出現，標題為「TSM 投研報告」。
+
+**若出現 401 錯誤**，Keychain 密碼可能失效，重新設定：
 ```bash
-python3 scripts/publish_to_wordpress.py
-```
-
-**腳本做什麼**：
-- 從 macOS Keychain 讀取 Application Password（帳號 ClaudeCode）
-- 把最新的 MD 轉成 HTML（含表格支援）
-- 透過 WordPress REST API（`/wp-json/wp/v2/posts`）發文
-- 自動建立 tag / category（若不存在）
-
-**確認結果**：
-Terminal 應顯示：
-```
-Published: 'TSM 投研報告' -> ID: xxx
-```
-到 `https://iro.langstalk.pro` 確認文章已出現。
-
-**若失敗**，先確認 Keychain：
-```bash
+# 確認目前密碼
 security find-generic-password -a ClaudeCode -s wp-app-password -w
+
+# 若需更新
+security delete-generic-password -a ClaudeCode -s wp-app-password
+security add-generic-password -a ClaudeCode -s wp-app-password -w "新的 App Password"
 ```
 
 ---
 
 ### Step 4｜Hugo build — 建立靜態網站
 
-```bash
-python3 scripts/build_hugo.py
+**執行位置**：Terminal（自動由 run_all.py 呼叫）
+
+**Terminal 應顯示**：
+```
+Hugo build complete → hugo-investment-reports/public/
 ```
 
-**腳本做什麼**：
-- 把 `output/markdown_report/*.md` 加上 Hugo front matter，複製到 `hugo-investment-reports/content/posts/`
-- 執行 `hugo --minify`，輸出到 `hugo-investment-reports/public/`
-
-**確認結果**：
-```bash
-ls hugo-investment-reports/public/posts/
+**確認方式**：在 VS Code Explorer 確認 `hugo-investment-reports/public/posts/` 下有新目錄：
 ```
-應看到對應的 HTML 目錄。
+hugo-investment-reports/public/posts/
+├── tsm_2025q1_investment_report/
+├── tsm_2025q2_investment_report/
+├── tsm_2025q3_investment_report/
+└── tsm_2025q4_investment_report/
+```
 
 ---
 
-### Step 5｜Git publish — commit 並推上 GitHub
+### Step 5｜Git publish — 推上 GitHub
 
-```bash
-python3 scripts/git_commit_publish.py
+**執行位置**：Terminal（自動由 run_all.py 呼叫）
+
+**Terminal 應顯示**：
+```
+[main xxxxxxx] Automated investment reports update
+To https://github.com/williamhsueh2010-sys/investment-research-ops.git
+   xxxxxxx..xxxxxxx  main -> main
 ```
 
-**腳本做什麼**：
-- `git add .`
-- `git commit -m "Automated investment reports update"`
-- `git push origin main`
+**確認方式（兩處）**：
 
-**確認結果**：
-到 `github.com/williamhsueh2010-sys/investment-research-ops/actions`，
-確認 GitHub Actions（Hugo deploy）已觸發並完成。
+1. GitHub Actions 部署狀態：
+```
+https://github.com/williamhsueh2010-sys/investment-research-ops/actions
+```
+確認最新的 workflow run 顯示綠色 ✓。
 
-Hugo 網站網址：
+2. Hugo 靜態網站（約 1 分鐘後更新）：
 ```
 https://williamhsueh2010-sys.github.io/investment-research-ops/
 ```
 
 ---
 
-## 常見問題排查
+## 三、常見問題排查
 
-| 錯誤訊息 | 原因 | 解法 |
-|---------|------|------|
-| `ModuleNotFoundError` | 套件未安裝 | `python3 -m pip install -r requirements.txt` |
-| `401 Unauthorized` | WP Application Password 錯誤 | 重新產生並更新 Keychain |
-| `nothing to commit` | 本次執行無新檔案變動 | 正常，不影響流程 |
-| `fatal: 'origin'` | 未設定 GitHub remote | `git remote add origin <url>` |
+| 症狀 | 原因 | 解法 |
+|------|------|------|
+| `command not found: python` | 系統無 `python`，只有 `python3` | 改用 `python3 scripts/run_all.py` |
+| `ModuleNotFoundError` | 套件未安裝在正確的 python3 | `python3 -m pip install yfinance pyyaml markdown2 requests` |
+| `401 Unauthorized`（WordPress） | Application Password 失效 | 重新產生並更新 Keychain（見 Step 3） |
+| `nothing to commit` | 本次無新變動 | 正常，不影響流程 |
 | Hugo build failed | layouts 缺失 | 確認 `hugo-investment-reports/layouts/` 目錄存在 |
+| Yahoo Finance 資料只有 4 季 | API 限制 | 正常，yfinance 最多回傳近 4 季 quarterly data |
 
 ---
 
-## 新增公司的方法
+## 四、新增其他公司
 
 1. 在 `config/companies/` 新增 `{TICKER}.yaml`：
 ```yaml
-ticker: AAPL
+ticker: NVDA
 financial_weights:
   revenue_qoq: 3.0
   gross_margin_delta: 5.0
@@ -173,25 +171,24 @@ financial_weights:
 
 ---
 
-## 檔案結構總覽
+## 五、專案檔案結構
 
 ```
 investment-research-ops/
-├── config/
-│   └── companies/TSM.yaml          # 權重設定
+├── config/companies/TSM.yaml            # 權重設定
 ├── output/
-│   ├── backtesting/                # Yahoo Finance 抓取結果
-│   └── markdown_report/            # 產生的 MD 報告
-├── hugo-investment-reports/        # Hugo 靜態網站
-│   ├── content/posts/              # 複製進來的 MD（含 front matter）
-│   └── public/                     # build 輸出
+│   ├── backtesting/                     # Yahoo Finance 資料
+│   └── markdown_report/                 # 產生的 MD 報告
+├── hugo-investment-reports/
+│   ├── content/posts/                   # Hugo 用的 MD（含 front matter）
+│   └── public/                          # Hugo build 輸出
 ├── scripts/
-│   ├── run_all.py                  # 一鍵執行
-│   ├── run_backtesting.py          # Step 1
-│   ├── generate_investment_report.py  # Step 2
-│   ├── publish_to_wordpress.py     # Step 3
-│   ├── build_hugo.py               # Step 4
-│   └── git_commit_publish.py       # Step 5
+│   ├── run_all.py                       # 一鍵執行
+│   ├── run_backtesting.py               # Step 1：抓資料
+│   ├── generate_investment_report.py    # Step 2：產報告
+│   ├── publish_to_wordpress.py          # Step 3：發 WordPress
+│   ├── build_hugo.py                    # Step 4：build 靜態網站
+│   └── git_commit_publish.py            # Step 5：推 GitHub
 └── docs/
-    └── tsmc_workflow_2025q3.md     # 本文件
+    └── tsmc_workflow_2025q3.md          # 本文件
 ```
