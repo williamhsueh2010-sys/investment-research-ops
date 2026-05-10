@@ -1,43 +1,67 @@
 #!/usr/bin/env python3
 import os
+import subprocess
 from pathlib import Path
+
 import markdown2
-from wordpress_xmlrpc import Client, WordPressPost
-from wordpress_xmlrpc.methods.posts import NewPost
+import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORTS_DIR = ROOT / "output" / "markdown_report"
 
-WP_URL = os.environ.get("WP_URL", "https://iro.langstalk.pro/")
-WP_USERNAME = os.environ.get("WP_USERNAME", "william")
-WP_PASSWORD = os.environ.get("WP_PASSWORD", "williaM@6908008")
-
-def read_markdown_file(md_path: Path) -> str:
-    with open(md_path, "rt", encoding="utf-8") as f:
-        return f.read()
+WP_BASE = os.environ.get("WP_URL", "https://iro.langstalk.pro")
+WP_USERNAME = os.environ.get("WP_USERNAME", "ClaudeCode")
 
 
-def md_to_html(md_text: str) -> str:
-    return markdown2.markdown(md_text)
+def _get_app_password() -> str:
+    if pw := os.environ.get("WP_APP_PASSWORD"):
+        return pw
+    result = subprocess.run(
+        ["security", "find-generic-password", "-a", WP_USERNAME, "-s", "wp-app-password", "-w"],
+        capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    raise RuntimeError(
+        "WordPress Application Password 未設定。\n"
+        "請到 WordPress 後台 → 使用者 → 個人資料 → Application Passwords 新增，\n"
+        "然後執行：\n"
+        "  security add-generic-password -a william -s wp-app-password -w '你的 App Password'"
+    )
 
 
-def publish_to_wordpress(title: str, html_content: str, tags: list, categories: list):
-    client = Client(WP_URL, WP_USERNAME, WP_PASSWORD)
+def _get_or_create_term(session: requests.Session, taxonomy: str, name: str) -> int:
+    endpoint = f"{WP_BASE}/wp-json/wp/v2/{taxonomy}"
+    r = session.get(endpoint, params={"search": name})
+    r.raise_for_status()
+    results = r.json()
+    for item in results:
+        if item["name"] == name:
+            return item["id"]
+    r = session.post(endpoint, json={"name": name})
+    r.raise_for_status()
+    return r.json()["id"]
 
-    post = WordPressPost()
-    post.title = title
-    post.content = html_content
-    post.post_status = "publish"
 
-    if categories:
-        post.terms_names = {
-            "category": categories,
-        }
-    if tags:
-        post.terms_names["post_tag"] = tags
+def publish_to_wordpress(title: str, html_content: str, tags: list, categories: list) -> int:
+    app_password = _get_app_password()
+    session = requests.Session()
+    session.auth = (WP_USERNAME, app_password)
 
-    post_id = client.call(NewPost(post))
-    print(f"Published post: '{title}' -> ID: {post_id}")
+    tag_ids = [_get_or_create_term(session, "tags", t) for t in tags]
+    cat_ids = [_get_or_create_term(session, "categories", c) for c in categories]
+
+    payload = {
+        "title": title,
+        "content": html_content,
+        "status": "publish",
+        "tags": tag_ids,
+        "categories": cat_ids,
+    }
+    r = session.post(f"{WP_BASE}/wp-json/wp/v2/posts", json=payload)
+    r.raise_for_status()
+    post_id = r.json()["id"]
+    print(f"Published: '{title}' -> ID: {post_id}")
     return post_id
 
 
@@ -48,22 +72,14 @@ def main():
         return
 
     latest_md = max(md_files, key=lambda x: x.stat().st_mtime)
-    md_text = read_markdown_file(latest_md)
+    md_text = latest_md.read_text(encoding="utf-8")
 
-    filename = latest_md.stem
-    parts = filename.split("_")
-    ticker = parts[0] if parts else "UNK"
-    period = None
-    for p in parts:
-        if "Q" in p:
-            period = p
-    period = period or "UnknownPeriod"
-
-    post_title = f"{ticker} {period} 投研報告"
+    ticker = latest_md.stem.split("_")[0]
+    post_title = f"{ticker} 投研報告"
     tags = [ticker, "investing", "valuation", "backtesting"]
     categories = ["投資研究", "制度化投研框架"]
 
-    html_content = md_to_html(md_text)
+    html_content = markdown2.markdown(md_text, extras=["tables"])
     publish_to_wordpress(post_title, html_content, tags, categories)
 
 
