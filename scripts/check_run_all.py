@@ -1,18 +1,32 @@
 #!/usr/bin/env python3
 """
-簡易「流程驗證腳本」
-用於檢查：
+完整流程驗證腳本
+檢查：
 1. Markdown 是否產生
-2. WordPress 是否發佈成功（可自行加入 API 檢查）
-3. Git 有沒有 commit 且沒有 uncommitted changes
+2. WordPress 是否發布成功（透過 REST API 自動驗證）
+3. Git 是否有 commit 且沒有 uncommitted changes
 """
 from pathlib import Path
 import subprocess
 import sys
-import time
+import requests
+
+WP_BASE = "https://iro.langstalk.pro"
+WP_USERNAME = "ClaudeCode"
+TARGET_POST_TITLE = "TSM 投研報告"
 
 
-def check_markdown():
+def _get_app_password() -> str:
+    result = subprocess.run(
+        ["security", "find-generic-password", "-a", WP_USERNAME, "-s", "wp-app-password", "-w"],
+        capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    raise RuntimeError("Keychain 中找不到 wp-app-password")
+
+
+def check_markdown() -> bool:
     """檢查 Markdown 是否產生"""
     root = Path(__file__).resolve().parent.parent
     md_dir = root / "output" / "markdown_report"
@@ -20,7 +34,7 @@ def check_markdown():
 
     print("=== 1. 檢查 Markdown 是否產生 ===")
     if not md_dir.exists():
-        print(f"❌ 資料夾 {md_dir} 不存在")
+        print(f"❌ 目錄 {md_dir} 不存在")
         return False
 
     if not target_md.exists():
@@ -32,36 +46,20 @@ def check_markdown():
     return True
 
 
-def check_wordpress_post(post_title="TSM 投研報告"):
-    """檢查 WordPress 最新文章是否包含指定標題"""
-    import subprocess
-    import requests
+def check_wordpress_post(post_title: str = TARGET_POST_TITLE) -> bool:
+    """透過 WordPress REST API 檢查文章是否已發佈"""
+    print(f"=== 2. 檢查 WordPress 是否發佈成功（標題：'{post_title}'）===")
 
-    print(f"=== 2. 檢查 WordPress 是否發佈成功（搜尋標題：'{post_title}'）===")
-
-    WP_BASE = "https://iro.langstalk.pro"
-    WP_USERNAME = "ClaudeCode"
-
-    result = subprocess.run(
-        ["security", "find-generic-password", "-a", WP_USERNAME, "-s", "wp-app-password", "-w"],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        print("❌ 無法從 Keychain 取得 WordPress 密碼")
-        return False
-
-    auth = (WP_USERNAME, result.stdout.strip())
     try:
-        r = requests.get(
+        auth = (WP_USERNAME, _get_app_password())
+        response = requests.get(
             f"{WP_BASE}/wp-json/wp/v2/posts",
             auth=auth,
             params={"search": post_title, "per_page": 1, "status": "publish"},
             timeout=10,
         )
-        r.raise_for_status()
-        posts = r.json()
-        if posts:
-            post = posts[0]
+        if response.status_code == 200 and response.json():
+            post = response.json()[0]
             print(f"✅ WordPress 文章已發佈：{post['title']['rendered']}（ID: {post['id']}）")
             print(f"   網址：{post['link']}")
             return True
@@ -72,33 +70,33 @@ def check_wordpress_post(post_title="TSM 投研報告"):
         return False
 
 
-def check_git_status():
-    """檢查 git 目錄是否有 commit 且沒有 uncommitted changes"""
+def check_git_status() -> bool:
+    """检查 git 目录是否有 commit 且没有 uncommitted changes"""
     root = Path(__file__).resolve().parent.parent
     git_path = root
 
-    print("=== 3. 檢查 Git 狀態 ===")
-    print(f"檢查目錄：{git_path}")
+    print("=== 3. 检查 Git 状态 ===")
+    print(f"检查目录：{git_path}")
 
     if not (git_path / ".git").exists():
-        print("❌ 該目錄不是 Git 倉庫")
+        print("❌ 该目录不是 Git 仓库")
         return False
 
     try:
-        # 檢查是否有 uncommitted changes
+        # 检查是否有未提交的变更
         status_short = subprocess.check_output(
             ["git", "-C", str(git_path), "status", "--short"],
             text=True,
             stderr=subprocess.STDOUT,
         )
         if status_short.strip():
-            print("❌ 有未提交的變更：")
+            print("❌ 有未提交的变更：")
             print(status_short)
             return False
         else:
-            print("✅ 沒有未提交的變更")
+            print("✅ 没有未提交的变更")
 
-        # 檢查目前 commit SHA
+        # 检查当前 commit SHA
         commit_sha = subprocess.check_output(
             ["git", "-C", str(git_path), "rev-parse", "HEAD"],
             text=True,
@@ -106,28 +104,28 @@ def check_git_status():
         ).strip()
         print(f"HEAD commit: {commit_sha[:8]}")
 
-        # 檢查是否已推上遠端（ahead / behind）
+        # 检查是否已推送到远程（ahead / behind）
         short_status = subprocess.check_output(
             ["git", "-C", str(git_path), "status", "-sb"],
             text=True,
             stderr=subprocess.STDOUT,
         )
         if "ahead" in short_status:
-            print("⚠️  有 commits 尚未 push 到遠端")
+            print("⚠️  有 commits 尚未 push 到远程")
         elif "behind" in short_status:
-            print("⚠️  遠端有更新，本地尚未 pull")
+            print("⚠️  远程有更新，本地尚未 pull")
         else:
-            print("✅ git 狀態正常：沒有 uncommitted changes，且已與遠端同步")
+            print("✅ git 状态正常：没有 uncommitted changes，且已与远程同步")
 
         return True
 
     except subprocess.CalledProcessError as e:
-        print(f"❌ Git 執行錯誤：{e.stderr}")
+        print(f"❌ Git 执行错误：{e.stderr}")
         return False
 
 
 def main():
-    print("🔍 開始檢查 run_all 流程是否成功")
+    print("🔍 开始检查 run_all 流程是否成功")
     print("-" * 50)
 
     ok_markdown = check_markdown()
@@ -135,12 +133,12 @@ def main():
     ok_git = check_git_status()
 
     print("-" * 50)
-    print("📋 總結：")
+    print("📋 总结：")
     if ok_markdown and ok_wordpress and ok_git:
-        print("✅ 全部檢查通過：Markdown、WordPress、Git 都正常")
+        print("✅ 全部检查通过：Markdown、WordPress、Git 都正常")
         sys.exit(0)
     else:
-        print("❌ 有部分檢查未通過，請依上文提示調整")
+        print("❌ 有部分检查未通过，请根据上文提示调整")
         sys.exit(1)
 
 
