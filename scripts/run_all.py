@@ -15,9 +15,11 @@ if __name__ == "__main__":
     backtesting = "scripts/run_backtesting.py"
     report = "scripts/generate_investment_report.py"
     publish = "scripts/publish_to_wordpress.py"
+    hugo = "scripts/build_hugo.py"
     git_commit = "scripts/git_commit_publish.py"
 
     run_script(backtesting)
     run_script(report)
     run_script(publish)
+    run_script(hugo)
     run_script(git_commit)

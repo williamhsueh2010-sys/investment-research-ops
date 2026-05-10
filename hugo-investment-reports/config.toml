@@ -1,8 +1,6 @@
-baseURL = "https://williamhsueh2010-sys.github.io/investment-reports/"
+baseURL = "https://williamhsueh2010-sys.github.io/investment-research-ops/"
 languageCode = "zh-tw"
 title = "投資研究報告庫"
-
-theme = "custom-investment-theme"
 
 [taxonomies]
   category = "categories"
@@ -10,10 +8,5 @@ theme = "custom-investment-theme"
 
 [[menu.main]]
   name = "報表目錄"
-  url = "/posts/"
+  url = "/investment-research-ops/posts/"
   weight = 10
-
-[[menu.main]]
-  name = "關於框架"
-  url = "/about/"
-  weight = 20
