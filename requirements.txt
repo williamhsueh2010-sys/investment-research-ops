@@ -1,0 +1,4 @@
+pandas>=1.5
+PyYAML>=5.0
+markdown2>=2.5
+python-wordpress-xmlrpc>=2.0

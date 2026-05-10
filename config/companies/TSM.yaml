@@ -1,0 +1,4 @@
+ticker: TSM
+financial_weights:
+  revenue_qoq: 3.0
+  gross_margin_delta: 5.0
